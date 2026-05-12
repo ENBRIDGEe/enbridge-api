@@ -150,5 +150,3 @@ alembic upgrade head
 Where to look for full schema
 
 - The OpenAPI JSON at `/openapi.json` contains the components/schemas referenced above (UserRegister, Token, GoalCreate, GoalUpdate, MilestoneCreate, TaskCreate, TaskUpdate, NotificationUpdate). Use that file to produce client types.
-
-If you want, I can generate a small `openapi-typescript` client example and a short usage snippet for the frontend. Would you like that?
