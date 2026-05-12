@@ -1,13 +1,10 @@
-from .user import Users
-from .goal import Goals
-from .progress_log import Progress_logs
-from .notification_setting import Notification_settings
-from .subscription import Subscriptions
-from .task import Tasks
+from .models import Users, Goals, Milestones, Notification_settings, Progress_logs, Subscriptions, Tasks, Base
 
 __all__ = [
+    "Base",
     "Users",
     "Goals",
+    "Milestones",
     "Progress_logs",
     "Notification_settings",
     "Subscriptions",
