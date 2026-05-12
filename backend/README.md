@@ -1,217 +1,154 @@
-# Enbridge Goal Execution Platform - Backend MVP
+# Enbridge Backend API — Frontend Integration Guide
 
-A production-quality backend API for Enbridge, a goal execution platform built with FastAPI, SQLAlchemy, and PostgreSQL.
+This document summarizes the API surface (paths, request/response shapes, auth) based on the server OpenAPI schema so frontend engineers can integrate the client.
 
-## Quick Start
+Base URL (local dev):
 
-### Prerequisites
-
-- Python 3.13+
-- PostgreSQL 12+
-- pip
-
-### Installation
-
-1. **Clone and navigate to backend:**
-
-    ```bash
-    cd backend
-    ```
-
-2. **Create and activate virtual environment:**
-
-    ```bash
-    python3.13 -m venv .venv
-    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    ```
-
-3. **Install dependencies:**
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4. **Set up environment variables:**
-
-    ```bash
-    cp .env.example .env
-    # Edit .env with your configuration
-    ```
-
-5. **Create PostgreSQL database:**
-
-    ```bash
-    createdb enbridge
-    ```
-
-6. **Start development server:**
-    ```bash
-    uvicorn app.main:app --reload
-    ```
-
-The API will be available at `http://localhost:8000`
-
-### API Documentation
-
-- **Interactive Docs (Swagger):** http://localhost:8000/docs
-- **Alternative Docs (ReDoc):** http://localhost:8000/redoc
-
-## Project Structure
-
-```
-app/
-├── main.py                 # FastAPI app entry point
-├── api/
-│   ├── deps.py            # Dependency injections (auth, db)
-│   └── routes/
-│       ├── auth.py        # Authentication endpoints
-│       ├── users.py       # User profile endpoints
-│       ├── goals.py       # Goal CRUD endpoints
-│       ├── milestones.py  # Milestone CRUD endpoints
-│       ├── tasks.py       # Task CRUD endpoints
-│       ├── progress.py    # Progress tracking endpoints
-│       └── notifications.py # Notification settings endpoints
-├── core/
-│   ├── config.py          # Pydantic settings
-│   ├── database.py        # SQLAlchemy setup
-│   ├── security.py        # JWT & password hashing
-│   └── exceptions.py      # Custom HTTP exceptions
-├── models/
-│   ├── user.py
-│   ├── goal.py
-│   ├── milestone.py
-│   ├── task.py
-│   ├── progress_log.py
-│   └── notification_setting.py
-├── schemas/
-│   ├── auth.py
-│   ├── user.py
-│   ├── goal.py
-│   ├── milestone.py
-│   ├── task.py
-│   ├── progress.py
-│   └── notification.py
-├── repositories/
-│   ├── user_repository.py
-│   ├── goal_repository.py
-│   ├── milestone_repository.py
-│   ├── task_repository.py
-│   ├── progress_repository.py
-│   └── notification_repository.py
-└── services/
-    ├── auth_service.py
-    ├── user_service.py
-    ├── goal_service.py
-    ├── milestone_service.py
-    ├── task_service.py
-    ├── progress_service.py
-    └── notification_service.py
+```text
+http://127.0.0.1:8000
 ```
 
-## API Endpoints
+Interactive docs / OpenAPI:
 
-### Authentication
+```text
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/openapi.json
+```
 
-- `POST /api/v1/auth/register` - Register new user
-- `POST /api/v1/auth/login` - Login user
-- `POST /api/v1/auth/refresh` - Refresh access token
-- `GET /api/v1/auth/me` - Get current user (requires Bearer token)
-
-### Users
-
-- `GET /api/v1/users/me` - Get current user profile
-- `PATCH /api/v1/users/me` - Update current user profile
-
-### Goals
-
-- `POST /api/v1/goals` - Create goal
-- `GET /api/v1/goals` - List all user goals
-- `GET /api/v1/goals/{goal_id}` - Get specific goal
-- `PATCH /api/v1/goals/{goal_id}` - Update goal
-- `DELETE /api/v1/goals/{goal_id}` - Delete goal
-
-### Milestones
-
-- `POST /api/v1/milestones?goal_id=<goal_id>` - Create milestone
-- `GET /api/v1/milestones/goal/{goal_id}` - List goal milestones
-- `GET /api/v1/milestones/{milestone_id}` - Get milestone
-- `PATCH /api/v1/milestones/{milestone_id}` - Update milestone
-- `DELETE /api/v1/milestones/{milestone_id}` - Delete milestone
-
-### Tasks
-
-- `POST /api/v1/tasks?milestone_id=<milestone_id>` - Create task
-- `GET /api/v1/tasks/milestone/{milestone_id}` - List milestone tasks
-- `GET /api/v1/tasks/{task_id}` - Get task
-- `PATCH /api/v1/tasks/{task_id}` - Update task
-- `PATCH /api/v1/tasks/{task_id}/complete` - Mark task complete
-- `PATCH /api/v1/tasks/{task_id}/uncomplete` - Mark task incomplete
-- `DELETE /api/v1/tasks/{task_id}` - Delete task
-
-### Progress
-
-- `GET /api/v1/progress/summary` - Get progress summary
-- `GET /api/v1/progress/goals/{goal_id}` - Get goal progress logs
-
-### Notifications
-
-- `GET /api/v1/notifications/settings` - Get notification settings
-- `PATCH /api/v1/notifications/settings` - Update notification settings
-
-## Authentication
-
-All endpoints (except registration and login) require a Bearer token in the `Authorization` header:
+Quick start (dev):
 
 ```bash
-curl -H "Authorization: Bearer <your_access_token>" http://localhost:8000/api/v1/users/me
+cd backend
+source .venv/bin/activate
+pip install -r requirements.txt
+./.venv/bin/uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-## Environment Variables
+Environment (backend/.env)
 
-- `APP_NAME` - Application name (default: "Enbridge")
-- `DEBUG` - Enable debug mode (default: False)
-- `SECRET_KEY` - JWT secret key (required in production)
-- `ACCESS_TOKEN_EXPIRE_MINUTES` - Access token expiry (default: 60)
-- `REFRESH_TOKEN_EXPIRE_DAYS` - Refresh token expiry (default: 30)
-- `DATABASE_URL` - PostgreSQL connection string
-- `ALGORITHM` - JWT algorithm (default: HS256)
+- The app reads lowercase DB parts: `user`, `password`, `host`, `port`, `dbname`. If all present the app builds the Postgres `DATABASE_URL`. Otherwise it falls back to `sqlite:///./enbridge.db`.
+- Required for production: `SECRET_KEY`, DB credentials, Google OAuth keys (if using Google sign-in).
 
-## Database Migrations
+Example `.env` (fill password and hosts):
 
-Alembic is configured for database migrations. (Currently using SQLAlchemy Core schema creation on startup.)
+```env
+SECRET_KEY=change-this
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 
-## Testing
+user=postgres
+password=your-db-password
+host=your-db-host
+port=5432
+dbname=postgres
 
-Run pytest tests:
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
+```
+
+Authentication
+
+- All protected endpoints require an Authorization header:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Main endpoints (summary and frontend usage)
+
+- POST `/register` — Register a new user (JSON body: `UserRegister`)
+    - Body schema: `UserRegister` { name, email, password }
+    - Response: `Token` { access_token, token_type }
+
+- POST `/token` — Login (OAuth2 password form)
+    - Content-Type: `application/x-www-form-urlencoded`
+    - Fields: `username` (email), `password`
+    - Response: `Token`
+
+- GET `/auth/google` — Redirect to Google for OAuth sign-in.
+- GET `/auth/google/callback` — Google callback: returns `Token` + user info on success.
+
+- GET `/users/me/` — Get current user (requires auth)
+- GET `/users/me/public` — Public profile of current user (no auth required)
+- GET `/users/debug` — Debug helper (dev only)
+- GET `/users/auth` — Auth check (requires auth)
+
+- Goals
+    - GET `/goals` — List goals for current user (requires auth)
+    - POST `/goals` — Create a goal (body: `GoalCreate`)
+        - `GoalCreate`: { title, category, deadline (date-time), status }
+    - GET `/goals/{goal_id}` — Read a specific goal (requires auth)
+    - PATCH `/goals/{goal_id}` — Update a goal (body: `GoalUpdate`)
+    - DELETE `/goals/{goal_id}` — Delete goal
+
+- Milestones
+    - POST `/milestones` — Create milestone (body: `MilestoneCreate`)
+        - `MilestoneCreate`: { goal_id (uuid), target_date (date-time), order_index (integer) }
+    - GET `/milestones/goal/{goal_id}` — List milestones for a goal (requires auth)
+
+- Tasks
+    - GET `/tasks` — List tasks for current user (requires auth)
+    - POST `/tasks` — Create task (body: `TaskCreate`)
+        - `TaskCreate`: { milestone_id (uuid), due_date (date-time), completed (bool) }
+    - PATCH `/tasks/{task_id}` — Update task (body: `TaskUpdate`)
+    - DELETE `/tasks/{task_id}` — Delete task
+
+- Notifications
+    - GET `/notifications/settings` — Read notification settings for current user (requires auth)
+    - PATCH `/notifications/settings` — Update settings (body: `NotificationUpdate`)
+        - `NotificationUpdate`: { push_enabled (bool), remainder (date-time) }
+
+Request/response examples
+
+- Register example
 
 ```bash
-pytest
+curl -X POST http://127.0.0.1:8000/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alex","email":"alex@example.com","password":"secret"}'
 ```
 
-## Architecture
+Response (200):
 
-The backend follows a layered architecture:
+```json
+{
+	"access_token": "<jwt>",
+	"token_type": "bearer"
+}
+```
 
-1. **Routes** - Define endpoints, validate requests, call services
-2. **Dependencies** - Provide DB session and authenticated user
-3. **Services** - Business logic, authorization, transaction management
-4. **Repositories** - Database CRUD operations
-5. **Models** - SQLAlchemy ORM models
-6. **Schemas** - Pydantic request/response validation
+- Login example (form encoded)
 
-## Technology Stack
+```bash
+curl -X POST http://127.0.0.1:8000/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=alex@example.com&password=secret"
+```
 
-- **Framework:** FastAPI 0.115+
-- **ORM:** SQLAlchemy 2.0
-- **Database:** PostgreSQL with psycopg
-- **Validation:** Pydantic v2
-- **Authentication:** JWT (python-jose) + bcrypt
-- **Testing:** pytest
-- **API Server:** Uvicorn
+Frontend integration notes
 
-## Notes
+- Use the OpenAPI JSON at `/openapi.json` to generate typed clients (e.g., TypeScript via openapi-generator or `openapi-typescript`).
+- For auth flows, persist `access_token` securely (httpOnly cookie or in-memory) and attach `Authorization: Bearer <token>` for protected requests.
+- Google OAuth: call `/auth/google` from the browser (redirect) and handle the callback at `/auth/google/callback` — the server responds with the JWT.
+- Errors: validation errors return 422 with `HTTPValidationError` shape; missing DB returns 503 with a helpful message.
 
-- All endpoints require authentication except `/api/v1/auth/register`, `/api/v1/auth/login`, and `/api/v1/health`
-- User ownership is enforced at the service layer
-- Timestamps use UTC
-- UUIDs are used as primary keys
+Database & migrations
+
+- The app will attempt to create tables at startup when the DB is available. For production use, prefer Alembic migrations instead of relying on `create_all()`.
+- Recommended workflow:
+
+```bash
+# set DATABASE env (.env)
+cd backend
+source .venv/bin/activate
+# create migration
+alembic revision --autogenerate -m "init"
+alembic upgrade head
+```
+
+Where to look for full schema
+
+- The OpenAPI JSON at `/openapi.json` contains the components/schemas referenced above (UserRegister, Token, GoalCreate, GoalUpdate, MilestoneCreate, TaskCreate, TaskUpdate, NotificationUpdate). Use that file to produce client types.
+
+If you want, I can generate a small `openapi-typescript` client example and a short usage snippet for the frontend. Would you like that?

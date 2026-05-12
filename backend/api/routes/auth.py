@@ -1,9 +1,10 @@
 from typing import Annotated
 from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import jwt
+from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel
+from pwdlib import PasswordHash
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from sqlalchemy import text
@@ -29,18 +30,18 @@ class UserRegister(BaseModel):
 def get_settings():
     return Settings()
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Verifies if a plain text password matches a hashed password
 # Returns True if passwords match, False otherwise
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    return password_hash.verify(plain_password, hashed_password)
 
 # Generates a hashed version of a plain text password
 # Returns the hashed password string
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    return password_hash.hash(password)
 
 # Retrieves a user from the database by username
 # Returns a UsrInDB object if found, None otherwise
@@ -128,7 +129,7 @@ async def get_current_user(settings: Annotated[Settings, Depends(get_settings)],
 
         return {"user": user, "auth_method": auth_method}  # Return user and auth method
 
-    except JWTError:
+    except InvalidTokenError:
         raise credentials_exception
 
 # Verifies if a user is active (not disabled)

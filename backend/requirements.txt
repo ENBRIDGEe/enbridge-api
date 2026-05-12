@@ -7,8 +7,8 @@ psycopg2-binary
 alembic
 pydantic
 pydantic-settings
-python-jose[cryptography]
-passlib[bcrypt]
+PyJWT
+pwdlib[argon2]
 python-multipart
 pytest
 httpx
