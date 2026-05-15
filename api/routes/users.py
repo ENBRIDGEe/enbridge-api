@@ -1,5 +1,6 @@
 from typing import Annotated
-from fastapi import Depends, APIRouter
+from fastapi import Depends, APIRouter, Request
+import os
 from sqlalchemy import text
 from core.database import SessionLocal
 
@@ -66,4 +67,32 @@ async def read_own_items(
     return {
         "message": f"Authenticated via {auth_method}",
         "user": user
+    }
+
+
+# Dev debug endpoint: inspect session and cookie for troubleshooting
+@router.get("/debug/auth-cookie")
+async def debug_auth_cookie(request: Request):
+    # Return cookie, header and session info (development only)
+    cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
+    cookie_value = request.cookies.get(cookie_name)
+    try:
+        session_keys = list(request.session.keys())
+    except Exception:
+        session_keys = None
+
+    # Return a subset of headers relevant for CORS/cookie issues
+    headers_of_interest = {
+        "origin": request.headers.get("origin"),
+        "referer": request.headers.get("referer"),
+        "cookie": request.headers.get("cookie"),
+        "authorization": request.headers.get("authorization"),
+    }
+
+    return {
+        "cookie_name": cookie_name,
+        "cookie_present": bool(cookie_value),
+        "cookie_value_sample": (cookie_value[:16] + "...") if cookie_value else None,
+        "session_keys": session_keys,
+        "headers": headers_of_interest,
     }

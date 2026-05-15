@@ -1,11 +1,21 @@
 from datetime import timedelta
 from typing import Annotated
+import os
 from fastapi import Depends, HTTPException, Request, APIRouter, status
 from authlib.integrations.starlette_client import OAuth
+from authlib.integrations.base_client.errors import MismatchingStateError
+from fastapi.responses import JSONResponse
 from httpx import ConnectError, ConnectTimeout, ReadTimeout
-from .auth import create_access_token, create_user, get_user
+from .auth import (
+    create_access_token,
+    create_user,
+    get_cookie_samesite,
+    get_frontend_redirect_url,
+    get_user,
+)
 from core.config import Settings
 from functools import lru_cache
+from fastapi.responses import RedirectResponse
 
 router = APIRouter()
 
@@ -51,6 +61,17 @@ def get_or_create_google_user(user_info: dict):
 @router.get("/auth/google")
 async def auth_google(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
     redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("google_callback"))
+    # Log the chosen redirect URI for debugging redirect_uri_mismatch issues
+    print(f"[auth_google] using redirect_uri: {redirect_uri}")
+
+    # If the client expects JSON (likely an XHR), return the auth URL instead of redirecting.
+    # NOTE: A top-level navigation is required for OAuth so the browser stores the session cookie.
+    if "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with"):
+        # Build the redirect response and extract Location header
+        resp = await oauth.google.authorize_redirect(request, redirect_uri=redirect_uri)
+        location = resp.headers.get("location")
+        return JSONResponse({"auth_url": location, "note": "Use window.location.href = auth_url to start OAuth (must be a top-level navigation)."})
+
     return await oauth.google.authorize_redirect(request, redirect_uri=redirect_uri)
 
 
@@ -58,6 +79,13 @@ async def auth_google(request: Request, settings: Annotated[Settings, Depends(ge
 @router.get("/auth/google/callback")
 async def google_callback(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
     try:
+        # Debug: show incoming cookies and session keys
+        print(f"[google_callback] request.cookies: {dict(request.cookies)}")
+        try:
+            print(f"[google_callback] session keys: {list(request.session.keys())}")
+        except Exception:
+            print("[google_callback] no session available on request")
+
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get("userinfo")
         if not user_info:
@@ -66,18 +94,43 @@ async def google_callback(request: Request, settings: Annotated[Settings, Depend
 
         user = get_or_create_google_user(user_info)
 
-        # Use email as username
-        username = user["email"]
-
-        # Generate a JWT token with auth_method="google"
         access_token = create_access_token(
-            settings, 
-            data={"sub": username}, 
+            settings,
+            data={"sub": user["email"]},
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-            auth_method="google"
+            auth_method="google",
         )
 
-        return {"access_token": access_token, "token_type": "bearer", "user": user}
+        cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
+        max_age = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+        cookie_domain = os.getenv("COOKIE_DOMAIN") or None
+
+        response = RedirectResponse(url=get_frontend_redirect_url())
+        response.set_cookie(
+            key=cookie_name,
+            value=access_token,
+            httponly=True,
+            secure=request.url.scheme == "https" or os.getenv("COOKIE_SECURE", "false").lower() == "true",
+            samesite=get_cookie_samesite(),
+            max_age=max_age,
+            expires=max_age,
+            path="/",
+            domain=cookie_domain,
+        )
+
+        return response
+    except MismatchingStateError as mse:
+        # Provide a clearer error explaining common causes and remediation steps
+        print("[google_callback] MismatchingStateError: state mismatch — session cookie likely not preserved across redirects.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "OAuth state mismatch (CSRF). Common causes: frontend initiated the flow via XHR instead of a top-level navigation, "
+                "inconsistent hostnames (localhost vs 127.0.0.1), or cookie SameSite/Secure settings blocking the session cookie. "
+                "Ensure you navigate the browser to /auth/google (e.g., `window.location.href = '/auth/google'`), clear cookies for localhost, "
+                "and verify GOOGLE_REDIRECT_URI exactly matches the value registered in Google Cloud Console."
+            ),
+        )
     except (ConnectTimeout, ReadTimeout, ConnectError):
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,

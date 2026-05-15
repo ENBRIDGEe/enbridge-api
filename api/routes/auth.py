@@ -1,5 +1,6 @@
 from typing import Annotated
-from fastapi import Depends, HTTPException, status, APIRouter
+import os
+from fastapi import Depends, HTTPException, status, APIRouter, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -11,6 +12,7 @@ from sqlalchemy import text
 from uuid import uuid4
 from core.config import Settings
 from core.database import SessionLocal
+from fastapi.responses import RedirectResponse
 
 router = APIRouter()
 
@@ -26,12 +28,27 @@ class UserRegister(BaseModel):
     password: str
 
 
+def get_frontend_redirect_url() -> str:
+    return os.getenv("FRONTEND_URL", "http://localhost:5173/app/dashboard")
+
+
+def get_cookie_samesite() -> str:
+    same_site = os.getenv("COOKIE_SAMESITE", "lax").lower().strip()
+    if same_site not in {"lax", "strict", "none"}:
+        return "lax"
+    return same_site
+
+
+def should_use_secure_cookie(request: Request) -> bool:
+    return request.url.scheme == "https" or os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+
 @lru_cache
 def get_settings():
     return Settings()
 
 password_hash = PasswordHash.recommended()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 # Verifies if a plain text password matches a hashed password
 # Returns True if passwords match, False otherwise
@@ -109,13 +126,21 @@ def create_access_token(settings, data: dict, expires_delta: timedelta | None = 
     return encoded_jwt
 
 # Verifies the token and returns the user and auth method
-async def get_current_user(settings: Annotated[Settings, Depends(get_settings)], token: Annotated[str, Depends(oauth2_scheme)]):
+async def get_current_user(settings: Annotated[Settings, Depends(get_settings)], request: Request, token: Annotated[str | None, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        # If no Authorization header token, fall back to HttpOnly cookie
+        if not token:
+            cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
+            token = request.cookies.get(cookie_name)
+
+        if not token:
+            raise credentials_exception
+
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username = payload.get("sub")
         auth_method = payload.get("auth_method", "password")  # Default to password auth
@@ -174,9 +199,13 @@ async def register(user_data: UserRegister, settings: Annotated[Settings, Depend
 
 
 # Endpoint for user authentication and token generation
-# Validates username/password and returns JWT access token if valid
+# Validates username/password, sets the JWT cookie, and redirects on success
 @router.post("/token")
-async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], settings: Annotated[Settings, Depends(get_settings)]) -> Token:
+async def login(
+    request: Request,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    settings: Annotated[Settings, Depends(get_settings)],
+):
     user = authenticate_user( form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -188,4 +217,21 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], sett
     access_token = create_access_token(
         settings, data={"sub": user['email']}, expires_delta=access_token_expires
     )
-    return Token(access_token=access_token, token_type="bearer")
+
+    cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
+    max_age = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    cookie_domain = os.getenv("COOKIE_DOMAIN") or None
+
+    response = RedirectResponse(url=get_frontend_redirect_url())
+    response.set_cookie(
+        key=cookie_name,
+        value=access_token,
+        httponly=True,
+        secure=should_use_secure_cookie(request),
+        samesite=get_cookie_samesite(),
+        max_age=max_age,
+        expires=max_age,
+        path="/",
+        domain=cookie_domain,
+    )
+    return response

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import declarative_base
 from uuid import uuid4
-from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Float, func, Integer
+from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Float, func, Integer, Date
 from sqlalchemy.dialects.postgresql import UUID
 
 Base = declarative_base()
@@ -41,6 +41,17 @@ class Progress_logs(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid4)
     completion_percent = Column(Float, index=True)
     logged_at = Column(DateTime, index=True)
+
+
+class Focus_sessions(Base):
+    __tablename__ = "focus_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    session_duration_minutes = Column(Integer, nullable=False)
+    completed_at = Column(DateTime, nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    created_at = Column(DateTime, index=True, server_default=func.now())
 
 
 class Subscriptions(Base):

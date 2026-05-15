@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI")
+    CORS_ALLOW_ORIGINS: str = os.getenv(
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:5173",
+    )
+    # Cookie settings
+    COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    COOKIE_SAMESITE: str = os.getenv("COOKIE_SAMESITE", "lax")
+    COOKIE_DOMAIN: str | None = os.getenv("COOKIE_DOMAIN") or None
 
     # Fetch variables
     USER: str = os.getenv("user")

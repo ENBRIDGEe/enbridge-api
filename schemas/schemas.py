@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, date
 from uuid import UUID
+from typing import Literal
 
 class Token(BaseModel):
     access_token: str
@@ -30,6 +31,32 @@ class Progress_logs(BaseModel):
     id: UUID | None = None
     completion_percent: float
     logged_at: datetime
+
+
+class FocusSessionCreate(BaseModel):
+    session_duration_minutes: int = Field(gt=0)
+    completed_at: datetime
+    date: date
+
+
+class FocusSessionRecord(BaseModel):
+    id: UUID
+    user_id: UUID
+    session_duration_minutes: int
+    completed_at: datetime
+    date: date
+    created_at: datetime
+
+
+class FocusTimeResponse(BaseModel):
+    date: date
+    total_minutes: int
+    sessions_count: int
+    avg_session_minutes: float
+    focus_time_display: str
+
+
+FocusTimeRange = Literal["day", "week", "month"]
 
 class Subscriptions(BaseModel):
     id: UUID | None = None
