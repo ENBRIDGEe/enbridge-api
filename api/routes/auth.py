@@ -1,5 +1,7 @@
 from typing import Annotated
+import hashlib
 import os
+import secrets
 from fastapi import Depends, HTTPException, status, APIRouter, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
@@ -12,7 +14,7 @@ from sqlalchemy import text
 from uuid import uuid4
 from core.config import Settings
 from core.database import SessionLocal
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 router = APIRouter()
 
@@ -41,6 +43,14 @@ def get_cookie_samesite() -> str:
 
 def should_use_secure_cookie(request: Request) -> bool:
     return request.url.scheme == "https" or os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+
+def get_access_cookie_name(settings: Settings | None = None) -> str:
+    return (settings.ACCESS_COOKIE_NAME if settings else os.getenv("ACCESS_COOKIE_NAME")) or "access_token"
+
+
+def get_refresh_cookie_name(settings: Settings | None = None) -> str:
+    return (settings.REFRESH_COOKIE_NAME if settings else os.getenv("REFRESH_COOKIE_NAME")) or "refresh_token"
 
 
 @lru_cache
@@ -125,6 +135,153 @@ def create_access_token(settings, data: dict, expires_delta: timedelta | None = 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(64)
+
+
+def hash_refresh_token(refresh_token: str) -> str:
+    return hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+
+
+def store_refresh_token(user_id, refresh_token: str, settings: Settings):
+    token_hash = hash_refresh_token(refresh_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    db = SessionLocal()
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at)
+                VALUES (:id, :user_id, :token_hash, :expires_at, NULL, NOW())
+                """
+            ),
+            {
+                "id": str(uuid4()),
+                "user_id": str(user_id),
+                "token_hash": token_hash,
+                "expires_at": expires_at,
+            },
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def get_refresh_token_user(refresh_token: str):
+    token_hash = hash_refresh_token(refresh_token)
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT
+                    refresh_tokens.id AS refresh_token_id,
+                    users.*
+                FROM refresh_tokens
+                JOIN users ON users.id = refresh_tokens.user_id
+                WHERE refresh_tokens.token_hash = :token_hash
+                  AND refresh_tokens.revoked_at IS NULL
+                  AND refresh_tokens.expires_at > NOW()
+                  AND users.is_active = TRUE
+                """
+            ),
+            {"token_hash": token_hash},
+        ).mappings().first()
+        return dict(row) if row else None
+    finally:
+        db.close()
+
+
+def revoke_refresh_token(refresh_token: str):
+    token_hash = hash_refresh_token(refresh_token)
+    db = SessionLocal()
+    try:
+        db.execute(
+            text(
+                """
+                UPDATE refresh_tokens
+                SET revoked_at = NOW()
+                WHERE token_hash = :token_hash AND revoked_at IS NULL
+                """
+            ),
+            {"token_hash": token_hash},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def set_auth_cookies(
+    response: Response,
+    request: Request,
+    settings: Settings,
+    access_token: str,
+    refresh_token: str | None = None,
+):
+    cookie_domain = settings.COOKIE_DOMAIN
+    response.set_cookie(
+        key=get_access_cookie_name(settings),
+        value=access_token,
+        httponly=True,
+        secure=should_use_secure_cookie(request),
+        samesite=get_cookie_samesite(),
+        max_age=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
+        expires=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
+        path="/",
+        domain=cookie_domain,
+    )
+
+    if refresh_token:
+        refresh_max_age = int(settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)
+        response.set_cookie(
+            key=get_refresh_cookie_name(settings),
+            value=refresh_token,
+            httponly=True,
+            secure=should_use_secure_cookie(request),
+            samesite=get_cookie_samesite(),
+            max_age=refresh_max_age,
+            expires=refresh_max_age,
+            path="/",
+            domain=cookie_domain,
+        )
+
+
+def clear_auth_cookies(response: Response, settings: Settings):
+    cookie_domain = settings.COOKIE_DOMAIN
+    for cookie_name in (get_access_cookie_name(settings), get_refresh_cookie_name(settings)):
+        response.delete_cookie(
+            key=cookie_name,
+            path="/",
+            domain=cookie_domain,
+            samesite=get_cookie_samesite(),
+        )
+
+
+def create_user_session(request: Request, user: dict, settings: Settings, auth_method: str, redirect: bool = True):
+    access_token = create_access_token(
+        settings,
+        data={"sub": user["email"]},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        auth_method=auth_method,
+    )
+    refresh_token = create_refresh_token()
+    store_refresh_token(user["id"], refresh_token, settings)
+
+    if redirect:
+        response = RedirectResponse(url=get_frontend_redirect_url())
+    else:
+        response = JSONResponse(
+            {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "auth_method": auth_method,
+            }
+        )
+
+    set_auth_cookies(response, request, settings, access_token, refresh_token)
+    return response
+
 # Verifies the token and returns the user and auth method
 async def get_current_user(settings: Annotated[Settings, Depends(get_settings)], request: Request, token: Annotated[str | None, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
@@ -135,7 +292,7 @@ async def get_current_user(settings: Annotated[Settings, Depends(get_settings)],
     try:
         # If no Authorization header token, fall back to HttpOnly cookie
         if not token:
-            cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
+            cookie_name = get_access_cookie_name(settings)
             token = request.cookies.get(cookie_name)
 
         if not token:
@@ -174,7 +331,11 @@ async def get_current_active_user(
 # Endpoint for user registration
 # Stores the user's credentials in the users table and returns a JWT token
 @router.post("/register")
-async def register(user_data: UserRegister, settings: Annotated[Settings, Depends(get_settings)]) -> Token:
+async def register(
+    request: Request,
+    user_data: UserRegister,
+    settings: Annotated[Settings, Depends(get_settings)],
+):
     existing_user = get_user(user_data.email)
     if existing_user:
         raise HTTPException(
@@ -191,11 +352,7 @@ async def register(user_data: UserRegister, settings: Annotated[Settings, Depend
             detail="Email already registered",
         )
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        settings, data={"sub": user["email"]}, expires_delta=access_token_expires
-    )
-    return Token(access_token=access_token, token_type="bearer")
+    return create_user_session(request, user, settings, auth_method="password", redirect=False)
 
 
 # Endpoint for user authentication and token generation
@@ -213,25 +370,41 @@ async def login(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return create_user_session(request, user, settings, auth_method="password")
+
+
+@router.post("/auth/refresh")
+async def refresh_access_token(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
+    refresh_token = request.cookies.get(get_refresh_cookie_name(settings))
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
+
+    token_user = get_refresh_token_user(refresh_token)
+    if not token_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    revoke_refresh_token(refresh_token)
+    user = {key: value for key, value in token_user.items() if key != "refresh_token_id"}
     access_token = create_access_token(
-        settings, data={"sub": user['email']}, expires_delta=access_token_expires
+        settings,
+        data={"sub": user["email"]},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        auth_method="refresh",
     )
+    new_refresh_token = create_refresh_token()
+    store_refresh_token(user["id"], new_refresh_token, settings)
 
-    cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
-    max_age = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
-    cookie_domain = os.getenv("COOKIE_DOMAIN") or None
+    response = JSONResponse({"message": "Access token refreshed"})
+    set_auth_cookies(response, request, settings, access_token, new_refresh_token)
+    return response
 
-    response = RedirectResponse(url=get_frontend_redirect_url())
-    response.set_cookie(
-        key=cookie_name,
-        value=access_token,
-        httponly=True,
-        secure=should_use_secure_cookie(request),
-        samesite=get_cookie_samesite(),
-        max_age=max_age,
-        expires=max_age,
-        path="/",
-        domain=cookie_domain,
-    )
+
+@router.post("/logout")
+async def logout(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
+    refresh_token = request.cookies.get(get_refresh_cookie_name(settings))
+    if refresh_token:
+        revoke_refresh_token(refresh_token)
+
+    response = JSONResponse({"message": "Logged out"})
+    clear_auth_cookies(response, settings)
     return response

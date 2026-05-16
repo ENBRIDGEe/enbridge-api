@@ -54,6 +54,17 @@ class Focus_sessions(Base):
     created_at = Column(DateTime, index=True, server_default=func.now())
 
 
+class Refresh_tokens(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, index=True, server_default=func.now())
+
+
 class Subscriptions(Base):
     __tablename__ = "subscriptions"
 

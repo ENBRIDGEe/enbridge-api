@@ -1,21 +1,16 @@
-from datetime import timedelta
 from typing import Annotated
-import os
 from fastapi import Depends, HTTPException, Request, APIRouter, status
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import MismatchingStateError
 from fastapi.responses import JSONResponse
 from httpx import ConnectError, ConnectTimeout, ReadTimeout
 from .auth import (
-    create_access_token,
+    create_user_session,
     create_user,
-    get_cookie_samesite,
-    get_frontend_redirect_url,
     get_user,
 )
 from core.config import Settings
 from functools import lru_cache
-from fastapi.responses import RedirectResponse
 
 router = APIRouter()
 
@@ -94,31 +89,7 @@ async def google_callback(request: Request, settings: Annotated[Settings, Depend
 
         user = get_or_create_google_user(user_info)
 
-        access_token = create_access_token(
-            settings,
-            data={"sub": user["email"]},
-            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-            auth_method="google",
-        )
-
-        cookie_name = os.getenv("ACCESS_COOKIE_NAME", "access_token")
-        max_age = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
-        cookie_domain = os.getenv("COOKIE_DOMAIN") or None
-
-        response = RedirectResponse(url=get_frontend_redirect_url())
-        response.set_cookie(
-            key=cookie_name,
-            value=access_token,
-            httponly=True,
-            secure=request.url.scheme == "https" or os.getenv("COOKIE_SECURE", "false").lower() == "true",
-            samesite=get_cookie_samesite(),
-            max_age=max_age,
-            expires=max_age,
-            path="/",
-            domain=cookie_domain,
-        )
-
-        return response
+        return create_user_session(request, user, settings, auth_method="google")
     except MismatchingStateError as mse:
         # Provide a clearer error explaining common causes and remediation steps
         print("[google_callback] MismatchingStateError: state mismatch — session cookie likely not preserved across redirects.")

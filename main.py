@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from core.database import engine
 from core.config import Settings
-from models.models import Base, Focus_sessions
+from models.models import Base, Focus_sessions, Refresh_tokens
 from api.routes import auth, analytics, goals, google_auth, milestones, notifications, tasks, users
 
 from starlette.middleware.sessions import SessionMiddleware
@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 try:
-    Base.metadata.create_all(bind=engine, tables=[Focus_sessions.__table__])
+    Base.metadata.create_all(bind=engine, tables=[Focus_sessions.__table__, Refresh_tokens.__table__])
 except Exception as exc:
     print(f"Failed to ensure focus_sessions table exists: {exc}")
 
