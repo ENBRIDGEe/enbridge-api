@@ -24,31 +24,12 @@ from api.deps import get_db
 
 
 
-# Use in-memory SQLite for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
-
-
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-
-# Ensure the app uses the in-memory sqlite DB for any code paths that use
-# core.database.SessionLocal directly.
-SessionLocal.configure(bind=engine)
+# Tests use the application's configured database (Supabase) from `.env`.
+# The test suite will connect using `core.database.SessionLocal` so we don't
+# set up a separate in-memory SQLite instance here.
 
 # Initialize client without following redirects by default to test OAuth flow
 client = TestClient(app, follow_redirects=False)
-app.dependency_overrides[get_db] = override_get_db
 
 
 def register_user(name: str = "Flow User") -> tuple[str, dict[str, str]]:
