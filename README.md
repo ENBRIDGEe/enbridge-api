@@ -80,7 +80,6 @@ Main endpoints (summary and frontend usage)
 Refresh token endpoint
 
 - **POST `/auth/refresh`** — Reissue the access token cookie using the current refresh token cookie.
-
     - Purpose: Accepts the current refresh token from the HttpOnly `refresh_token` cookie, validates it, and issues a fresh access token cookie used for authenticated requests. The existing refresh token remains valid until logout or expiry, which makes the endpoint safe to call multiple times during dashboard startup.
     - Authentication: The endpoint reads the `refresh_token` cookie; no `Authorization` header required for rotation flows.
     - Success: Returns `200 OK`, keeps the existing `refresh_token` cookie in place, and sets a fresh `access_token` cookie. The response body may include a short JSON status payload.
@@ -228,7 +227,7 @@ Example frontend auth fetch for the dashboard:
 
 ```js
 const response = await fetch("http://localhost:8000/users/auth", {
-    credentials: "include",
+	credentials: "include",
 });
 
 const user = await response.json();
@@ -300,7 +299,6 @@ alembic upgrade head
 # verify models and DB are in sync
 alembic check
 ```
-
 
 Where to look for full schema
 
