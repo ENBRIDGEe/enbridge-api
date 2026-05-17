@@ -1,4 +1,19 @@
-from .schemas import Goals, Milestones, Notification_settings, Progress_logs, Subscriptions, Tasks, Users
+from .schemas import (
+    FocusSessionCreate,
+    FocusSessionRecord,
+    FocusTimeResponse,
+    Goals,
+    Milestones,
+    Notification_settings,
+    Progress_logs,
+    Subscriptions,
+    Tasks,
+    Token,
+    UserOut,
+    UserPublic,
+    UserRegister,
+    UserUpdate,
+)
 
 
 __all__ = [
@@ -8,5 +23,12 @@ __all__ = [
     "Progress_logs",
     "Subscriptions",
     "Tasks",
-    "Users"
+    "Token",
+    "UserRegister",
+    "UserOut",
+    "UserPublic",
+    "UserUpdate",
+    "FocusSessionCreate",
+    "FocusSessionRecord",
+    "FocusTimeResponse",
 ]

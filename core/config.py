@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173/app/dashboard")
     CORS_ALLOW_ORIGINS: str = os.getenv(
         "CORS_ALLOW_ORIGINS",
         "http://localhost:5173",
@@ -42,4 +43,3 @@ class Settings(BaseSettings):
         )
     else:
         DATABASE_URL: str = "sqlite:///./enbridge.db"
-

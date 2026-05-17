@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from core.database import engine
+
 from core.config import Settings
 from models.models import Base, Focus_sessions
 from api.routes import auth, analytics, goals, google_auth, milestones, notifications, tasks, users
@@ -38,30 +39,6 @@ app.add_middleware(
     https_only=session_https_only,
     same_site=session_same_site,
 )
-
-try:
-    Base.metadata.create_all(bind=engine, tables=[Focus_sessions.__table__])
-    with engine.begin() as connection:
-        # SQLite does not support IF NOT EXISTS for ADD COLUMN, so guard using PRAGMA table_info.
-        existing_cols = {
-            row[1]
-            for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()
-        }
-
-        if "refresh_token_hash" not in existing_cols:
-            connection.execute(text("ALTER TABLE users ADD COLUMN refresh_token_hash VARCHAR"))
-        if "refresh_token_expires_at" not in existing_cols:
-            connection.execute(
-                text("ALTER TABLE users ADD COLUMN refresh_token_expires_at TIMESTAMP")
-            )
-        if "refresh_token_revoked_at" not in existing_cols:
-            connection.execute(
-                text("ALTER TABLE users ADD COLUMN refresh_token_revoked_at TIMESTAMP")
-            )
-
-
-except Exception as exc:
-    print(f"Failed to ensure auth/focus schema exists: {exc}")
 
 @app.exception_handler(OperationalError)
 async def database_unavailable_handler(request: Request, exc: OperationalError) -> JSONResponse:

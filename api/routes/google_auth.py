@@ -56,8 +56,6 @@ def get_or_create_google_user(user_info: dict):
 @router.get("/auth/google")
 async def auth_google(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
     redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("google_callback"))
-    # Log the chosen redirect URI for debugging redirect_uri_mismatch issues
-    print(f"[auth_google] using redirect_uri: {redirect_uri}")
 
     # If the client expects JSON (likely an XHR), return the auth URL instead of redirecting.
     # NOTE: A top-level navigation is required for OAuth so the browser stores the session cookie.
@@ -74,13 +72,6 @@ async def auth_google(request: Request, settings: Annotated[Settings, Depends(ge
 @router.get("/auth/google/callback")
 async def google_callback(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
     try:
-        # Debug: show incoming cookies and session keys
-        print(f"[google_callback] request.cookies: {dict(request.cookies)}")
-        try:
-            print(f"[google_callback] session keys: {list(request.session.keys())}")
-        except Exception:
-            print("[google_callback] no session available on request")
-
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get("userinfo")
         if not user_info:
@@ -92,7 +83,6 @@ async def google_callback(request: Request, settings: Annotated[Settings, Depend
         return create_user_session(request, user, settings, auth_method="google")
     except MismatchingStateError as mse:
         # Provide a clearer error explaining common causes and remediation steps
-        print("[google_callback] MismatchingStateError: state mismatch — session cookie likely not preserved across redirects.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -108,6 +98,4 @@ async def google_callback(request: Request, settings: Annotated[Settings, Depend
             detail="Could not reach Google from the backend. Check your internet connection, VPN, proxy, firewall, or try again.",
         )
     except Exception as e:
-        import traceback
-        print("Error:", traceback.format_exc())  # Debugging step
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

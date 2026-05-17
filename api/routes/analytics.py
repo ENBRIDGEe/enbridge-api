@@ -99,7 +99,7 @@ async def record_focus_session(
                     :session_duration_minutes,
                     :completed_at,
                     :date,
-                    NOW()
+                    CURRENT_TIMESTAMP
                 )
                 RETURNING id
                 """

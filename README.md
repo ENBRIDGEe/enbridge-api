@@ -18,7 +18,7 @@ http://localhost:8000/openapi.json
 Quick start (dev):
 
 ```bash
-cd backend
+cd /Users/kritimantalukdar/Desktop/Client/enbridge-api
 source .venv/bin/activate
 pip install -r requirements.txt
 ./.venv/bin/uvicorn main:app --reload --host 127.0.0.1 --port 8000
@@ -74,11 +74,13 @@ Main endpoints (summary and frontend usage)
 
 - GET `/auth/google` — Redirect to Google for OAuth sign-in.
 - GET `/auth/google/callback` — Google callback: on success the server sets the same HttpOnly cookie containing the JWT and redirects the browser to the frontend dashboard URL from `FRONTEND_URL` instead of returning JSON.
+- POST `/auth/refresh` — Rotate the refresh token and issue a new access-token cookie.
+- POST `/logout` — Revoke the refresh token and clear auth cookies.
 
 - GET `/users/me/` — Get current user (requires auth)
-- GET `/users/me/public` — Public profile of current user (no auth required)
-- GET `/users/debug` — Debug helper (dev only)
-- GET `/users/auth` — Auth check (requires auth)
+- PATCH `/users/me` — Update the current user's profile name (requires auth)
+- GET `/users/me/public` — Safe public fields for the current user (requires auth)
+- GET `/users/auth` — Minimal auth check helper, hidden from OpenAPI (requires auth)
 
 Frontend dashboard recommendation:
 
@@ -210,18 +212,24 @@ const user = await response.json();
 
 - Errors: validation errors return 422 with `HTTPValidationError` shape; missing DB returns 503 with a helpful message.
 
+Tests:
+
+```bash
+pytest -q
+```
+
 Database & migrations
 
-- The app will attempt to create tables at startup when the DB is available.
-- For production use, prefer **Alembic migrations** instead of relying only on `create_all()`.
+- Schema changes are managed with **Alembic migrations**.
+- Before running locally, apply migrations with `alembic upgrade head`.
 
 ## Local setup for Alembic (one-time)
 
-This repository currently does **not** include an Alembic environment. Create it once:
+This repository already includes an Alembic environment:
 
 ```bash
 cd /Users/kritimantalukdar/Desktop/Client/enbridge-api
-alembic init migrations
+alembic current
 ```
 
 ## Apply model changes (repeatable)
@@ -237,6 +245,9 @@ alembic revision --autogenerate -m "update models"
 
 # apply migration to enbridge.db / Postgres
 alembic upgrade head
+
+# verify models and DB are in sync
+alembic check
 ```
 
 

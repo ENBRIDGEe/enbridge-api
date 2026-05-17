@@ -6,7 +6,6 @@ from fastapi import Depends, HTTPException, status, APIRouter, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
 from jwt.exceptions import InvalidTokenError
-from pydantic import BaseModel
 from pwdlib import PasswordHash
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -15,42 +14,32 @@ from uuid import uuid4
 from core.config import Settings
 from core.database import SessionLocal
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from schemas.schemas import Token, UserRegister
 
 router = APIRouter()
 
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+def get_frontend_redirect_url(settings: Settings) -> str:
+    return settings.FRONTEND_URL or "http://localhost:5173/app/dashboard"
 
 
-class UserRegister(BaseModel):
-    name: str
-    email: str
-    password: str
-
-
-def get_frontend_redirect_url() -> str:
-    return os.getenv("FRONTEND_URL", "http://localhost:5173/app/dashboard")
-
-
-def get_cookie_samesite() -> str:
-    same_site = os.getenv("COOKIE_SAMESITE", "lax").lower().strip()
+def get_cookie_samesite(settings: Settings) -> str:
+    same_site = (settings.COOKIE_SAMESITE or "lax").lower().strip()
     if same_site not in {"lax", "strict", "none"}:
         return "lax"
     return same_site
 
 
-def should_use_secure_cookie(request: Request) -> bool:
-    return request.url.scheme == "https" or os.getenv("COOKIE_SECURE", "false").lower() == "true"
+def should_use_secure_cookie(request: Request, settings: Settings) -> bool:
+    return request.url.scheme == "https" or str(settings.COOKIE_SECURE).lower() == "true"
 
 
 def get_access_cookie_name(settings: Settings | None = None) -> str:
-    return (settings.ACCESS_COOKIE_NAME if settings else os.getenv("ACCESS_COOKIE_NAME")) or "access_token"
+    return (settings.ACCESS_COOKIE_NAME if settings else "access_token") or "access_token"
 
 
 def get_refresh_cookie_name(settings: Settings | None = None) -> str:
-    return (settings.REFRESH_COOKIE_NAME if settings else os.getenv("REFRESH_COOKIE_NAME")) or "refresh_token"
+    return (settings.REFRESH_COOKIE_NAME if settings else "refresh_token") or "refresh_token"
 
 
 @lru_cache
@@ -113,7 +102,7 @@ def create_user(name: str, email: str, password_hash: str):
             text(
                 """
                 INSERT INTO users (id, name, email, password_hash, is_active, is_admin, created_at, updated_at)
-                VALUES (:id, :name, :email, :password_hash, TRUE, FALSE, NOW(), NOW())
+                VALUES (:id, :name, :email, :password_hash, TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 RETURNING id, name, email, password_hash, is_active, is_admin, created_at, updated_at
                 """
             ),
@@ -131,7 +120,7 @@ def authenticate_user(email: str, password: str):
     user = get_user(email)
     if not user:
         return False
-    hashed_password = user.get("hashed_password") or user.get("password_hash")
+    hashed_password = user.get("password_hash")
     if not hashed_password or not verify_password(password, hashed_password):
         return False
     return user
@@ -171,7 +160,7 @@ def store_refresh_token(user_id, refresh_token: str, settings: Settings):
                 SET refresh_token_hash = :token_hash,
                     refresh_token_expires_at = :expires_at,
                     refresh_token_revoked_at = NULL,
-                    updated_at = NOW()
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = :user_id
                 """
             ),
@@ -197,7 +186,7 @@ def get_refresh_token_user(refresh_token: str):
                 FROM users
                 WHERE refresh_token_hash = :token_hash
                   AND refresh_token_revoked_at IS NULL
-                  AND refresh_token_expires_at > NOW()
+                  AND refresh_token_expires_at > CURRENT_TIMESTAMP
                   AND is_active = TRUE
                 """
             ),
@@ -216,8 +205,8 @@ def revoke_refresh_token(refresh_token: str):
             text(
                 """
                 UPDATE users
-                SET refresh_token_revoked_at = NOW(),
-                    updated_at = NOW()
+                SET refresh_token_revoked_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE refresh_token_hash = :token_hash
                   AND refresh_token_revoked_at IS NULL
                 """
@@ -241,10 +230,9 @@ def set_auth_cookies(
         key=get_access_cookie_name(settings),
         value=access_token,
         httponly=True,
-        secure=should_use_secure_cookie(request),
-        samesite=get_cookie_samesite(),
+        secure=should_use_secure_cookie(request, settings),
+        samesite=get_cookie_samesite(settings),
         max_age=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
-        expires=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
         path="/",
         domain=cookie_domain,
     )
@@ -255,10 +243,9 @@ def set_auth_cookies(
             key=get_refresh_cookie_name(settings),
             value=refresh_token,
             httponly=True,
-            secure=should_use_secure_cookie(request),
-            samesite=get_cookie_samesite(),
+            secure=should_use_secure_cookie(request, settings),
+            samesite=get_cookie_samesite(settings),
             max_age=refresh_max_age,
-            expires=refresh_max_age,
             path="/",
             domain=cookie_domain,
         )
@@ -271,7 +258,7 @@ def clear_auth_cookies(response: Response, settings: Settings):
             key=cookie_name,
             path="/",
             domain=cookie_domain,
-            samesite=get_cookie_samesite(),
+            samesite=get_cookie_samesite(settings),
         )
 
 
@@ -286,7 +273,7 @@ def create_user_session(request: Request, user: dict, settings: Settings, auth_m
     store_refresh_token(user["id"], refresh_token, settings)
 
     if redirect:
-        response = RedirectResponse(url=get_frontend_redirect_url())
+        response = RedirectResponse(url=get_frontend_redirect_url(settings))
     else:
         response = JSONResponse(
             {
