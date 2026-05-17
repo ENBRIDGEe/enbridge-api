@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, time
 from typing import Annotated
 from uuid import uuid4
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from core.database import SessionLocal
 from .auth import get_current_active_user
@@ -12,7 +12,9 @@ router = APIRouter()
 
 class NotificationUpdate(BaseModel):
     push_enabled: bool | None = None
-    remainder: datetime | None = None
+    email_enabled: bool | None = None
+    reminder_time: time | datetime | None = Field(default=None, alias="remainder")
+    timezone: str | None = None
 
 
 def get_user_id(current_user_data: dict):
@@ -31,8 +33,8 @@ def get_or_create_settings(db, user_id):
     settings = db.execute(
         text(
             """
-            INSERT INTO notification_settings (id, user_id, push_enabled, remainder)
-            VALUES (:id, :user_id, TRUE, NULL)
+            INSERT INTO notification_settings (id, user_id, push_enabled, email_enabled, reminder_time, timezone)
+            VALUES (:id, :user_id, TRUE, TRUE, NULL, 'UTC')
             RETURNING *
             """
         ),
@@ -63,12 +65,17 @@ async def update_notification_settings(
     db = SessionLocal()
     try:
         get_or_create_settings(db, user_id)
+        reminder_time = settings_data.reminder_time
+        if isinstance(reminder_time, datetime):
+            reminder_time = reminder_time.time()
         settings = db.execute(
             text(
                 """
                 UPDATE notification_settings
                 SET push_enabled = COALESCE(:push_enabled, push_enabled),
-                    remainder = COALESCE(:remainder, remainder)
+                    email_enabled = COALESCE(:email_enabled, email_enabled),
+                    reminder_time = COALESCE(:reminder_time, reminder_time),
+                    timezone = COALESCE(:timezone, timezone)
                 WHERE user_id = :user_id
                 RETURNING *
                 """
@@ -76,7 +83,9 @@ async def update_notification_settings(
             {
                 "user_id": str(user_id),
                 "push_enabled": settings_data.push_enabled,
-                "remainder": settings_data.remainder,
+                "email_enabled": settings_data.email_enabled,
+                "reminder_time": reminder_time,
+                "timezone": settings_data.timezone,
             },
         ).mappings().first()
         db.commit()

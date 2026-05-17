@@ -12,8 +12,11 @@ router = APIRouter()
 
 class MilestoneCreate(BaseModel):
     goal_id: UUID
+    title: str | None = None
+    description: str | None = None
     target_date: datetime
     order_index: int
+    completed: bool = False
 
 
 def get_user_id(current_user_data: dict):
@@ -41,16 +44,39 @@ async def create_milestone(
         milestone = db.execute(
             text(
                 """
-                INSERT INTO milestones (id, goal_id, target_date, order_index)
-                VALUES (:id, :goal_id, :target_date, :order_index)
+                INSERT INTO milestones (
+                    id,
+                    goal_id,
+                    title,
+                    description,
+                    order_index,
+                    target_date,
+                    completed,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :id,
+                    :goal_id,
+                    :title,
+                    :description,
+                    :order_index,
+                    :target_date,
+                    :completed,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
                 RETURNING *
                 """
             ),
             {
                 "id": str(uuid4()),
                 "goal_id": str(milestone_data.goal_id),
+                "title": milestone_data.title or f"Milestone {milestone_data.order_index}",
+                "description": milestone_data.description,
                 "target_date": milestone_data.target_date,
                 "order_index": milestone_data.order_index,
+                "completed": milestone_data.completed,
             },
         ).mappings().first()
         db.commit()

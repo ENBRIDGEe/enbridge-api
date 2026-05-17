@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, EmailStr
-from datetime import datetime, date
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from datetime import datetime, date, time
 from uuid import UUID
 from typing import Literal
 
@@ -33,25 +33,57 @@ class Goals(BaseModel):
     id: UUID | None = None
     user_id: UUID
     title: str
-    category: str
-    deadline: datetime
+    description: str | None = None
+    category: str | None = None
+    target_date: datetime | None = None
     status: str
+    progress_percentage: float = 0.0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    deadline: datetime | None = None
 
 class Milestones(BaseModel):
     id: UUID | None = None
     goal_id: UUID
+    title: str
+    description: str | None = None
     target_date: datetime
     order_index: int
+    completed: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class GoalActivity(BaseModel):
+    id: UUID | None = None
+    goal_id: UUID
+    activity_date: date
+    created_at: datetime | None = None
+
+
+class RefreshToken(BaseModel):
+    id: UUID | None = None
+    user_id: UUID
+    token_hash: str
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
 
 class Notification_settings(BaseModel):
     id: UUID | None = None
     user_id: UUID
     push_enabled: bool
-    remainder: datetime | None = None
+    email_enabled: bool
+    reminder_time: time | datetime | None = Field(default=None, alias="remainder")
+    timezone: str = "UTC"
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class Progress_logs(BaseModel):
     id: UUID | None = None
-    completion_percent: float
+    goal_id: UUID
+    completion_percentage: float
+    streak_days: int
     logged_at: datetime
 
 
@@ -86,9 +118,21 @@ class Subscriptions(BaseModel):
 
 class Tasks(BaseModel):
     id: UUID | None = None
-    milestone_id: UUID
+    user_id: UUID
+    title: str
     due_date: datetime
     completed: bool
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+    milestone_id: UUID | None = None
 
-# Removing the full 'Users' schema as it contains sensitive info (password_hash).
-# Use UserOut or UserPublic for responses.
+
+class Users(BaseModel):
+    id: UUID | None = None
+    name: str | None = None
+    email: EmailStr
+    password_hash: str
+    is_active: bool = True
+    is_admin: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

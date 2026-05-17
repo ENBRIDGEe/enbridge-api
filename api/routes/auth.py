@@ -163,15 +163,36 @@ def store_refresh_token(user_id, refresh_token: str, settings: Settings):
         db.execute(
             text(
                 """
-                UPDATE users
-                SET refresh_token_hash = :token_hash,
-                    refresh_token_expires_at = :expires_at,
-                    refresh_token_revoked_at = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = :user_id
+                UPDATE refresh_tokens
+                SET revoked_at = CURRENT_TIMESTAMP
+                WHERE user_id = :user_id AND revoked_at IS NULL
+                """
+            ),
+            {"user_id": str(user_id)},
+        )
+        db.execute(
+            text(
+                """
+                INSERT INTO refresh_tokens (
+                    id,
+                    user_id,
+                    token_hash,
+                    expires_at,
+                    revoked_at,
+                    created_at
+                )
+                VALUES (
+                    :id,
+                    :user_id,
+                    :token_hash,
+                    :expires_at,
+                    NULL,
+                    CURRENT_TIMESTAMP
+                )
                 """
             ),
             {
+                "id": str(uuid4()),
                 "user_id": str(user_id),
                 "token_hash": token_hash,
                 "expires_at": expires_at,
@@ -189,12 +210,13 @@ def get_refresh_token_user(refresh_token: str):
         row = db.execute(
             text(
                 """
-                SELECT id, name, email, password_hash, is_active, is_admin, created_at, updated_at
-                FROM users
-                WHERE refresh_token_hash = :token_hash
-                  AND refresh_token_revoked_at IS NULL
-                  AND refresh_token_expires_at > CURRENT_TIMESTAMP
-                  AND is_active = TRUE
+                                SELECT users.id, users.name, users.email, users.password_hash, users.is_active, users.is_admin, users.created_at, users.updated_at
+                                FROM refresh_tokens
+                                JOIN users ON users.id = refresh_tokens.user_id
+                                WHERE refresh_tokens.token_hash = :token_hash
+                                    AND refresh_tokens.revoked_at IS NULL
+                                    AND refresh_tokens.expires_at > CURRENT_TIMESTAMP
+                                    AND users.is_active = TRUE
                 """
             ),
             {"token_hash": token_hash},
@@ -211,11 +233,10 @@ def revoke_refresh_token(refresh_token: str):
         db.execute(
             text(
                 """
-                UPDATE users
-                SET refresh_token_revoked_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE refresh_token_hash = :token_hash
-                  AND refresh_token_revoked_at IS NULL
+                UPDATE refresh_tokens
+                SET revoked_at = CURRENT_TIMESTAMP
+                WHERE token_hash = :token_hash
+                  AND revoked_at IS NULL
                 """
             ),
             {"token_hash": token_hash},
