@@ -31,6 +31,8 @@ def get_cookie_samesite(settings: Settings) -> str:
     same_site = (settings.COOKIE_SAMESITE or "lax").lower().strip()
     if same_site not in {"lax", "strict", "none"}:
         return "lax"
+    if same_site == "lax" and str(settings.COOKIE_SECURE).lower() == "true":
+        return "none"
     return same_site
 
 

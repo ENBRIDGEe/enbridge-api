@@ -33,6 +33,8 @@ app.add_middleware(
 # Configure session cookie options to match auth cookie behavior so OAuth state is preserved
 session_https_only = bool(settings.COOKIE_SECURE)
 session_same_site = settings.COOKIE_SAMESITE if settings.COOKIE_SAMESITE in {"lax", "strict", "none"} else "lax"
+if session_same_site == "lax" and settings.COOKIE_SECURE:
+    session_same_site = "none"
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
