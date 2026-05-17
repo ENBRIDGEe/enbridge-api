@@ -254,6 +254,7 @@ pytest -q
 Recent changes (important)
 
 - **Refresh-token storage**: The app now stores refresh-token rotation state in the `refresh_tokens` table. Each login writes a new row, refresh validates the active row, and logout revokes that row. A migration exists at `migrations/versions/eaa370972844_updated_refresh_token_into_user_s_table.py`.
+- **Legacy user columns removed**: The `users.refresh_token_*` columns and their indexes were dropped from the live database. The new cleanup migration lives at `migrations/versions/7f9d3a6e4b21_drop_refresh_token_columns_from_users.py`.
 
 ```bash
 alembic upgrade head

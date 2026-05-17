@@ -74,7 +74,7 @@ class Notification_settings(BaseModel):
     user_id: UUID
     push_enabled: bool
     email_enabled: bool
-    reminder_time: time | datetime | None = Field(default=None, alias="remainder")
+    reminder_time: time | None = Field(default=None, alias="remainder")
     timezone: str = "UTC"
 
     model_config = ConfigDict(populate_by_name=True)
