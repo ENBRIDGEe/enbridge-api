@@ -4,10 +4,12 @@ from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import MismatchingStateError
 from fastapi.responses import JSONResponse
 from httpx import ConnectError, ConnectTimeout, ReadTimeout
+from authlib.jose import JsonWebKey, JsonWebToken
 from .auth import (
     create_user_session,
     create_user,
     get_user,
+    normalize_email,
 )
 from core.config import Settings
 from functools import lru_cache
@@ -30,12 +32,12 @@ oauth.register(
     access_token_url="https://oauth2.googleapis.com/token",
     userinfo_endpoint="https://openidconnect.googleapis.com/v1/userinfo",
     jwks_uri="https://www.googleapis.com/oauth2/v3/certs",
-    client_kwargs={"scope": "openid email profile"},
+    client_kwargs={"scope": "openid email profile", "timeout": 30},
 )
 
 
 def get_or_create_google_user(user_info: dict):
-    email = user_info.get("email")
+    email = normalize_email(user_info.get("email", ""))
     name = user_info.get("name") or email
 
     if not email:
@@ -50,6 +52,27 @@ def get_or_create_google_user(user_info: dict):
 
     user, created = create_user(name, email, "")
     return user
+
+
+async def decode_google_id_token(token: dict) -> dict | None:
+    if not token.get("id_token"):
+        return None
+
+    metadata = await oauth.google.load_server_metadata()
+    alg_values = metadata.get("id_token_signing_alg_values_supported") or ["RS256"]
+    jwt = JsonWebToken(alg_values)
+    jwk_set = await oauth.google.fetch_jwk_set()
+
+    claims = jwt.decode(
+        token["id_token"],
+        key=JsonWebKey.import_key_set(jwk_set),
+        claims_options={
+            "iss": {"values": [metadata["issuer"]]},
+            "aud": {"values": [get_settings().GOOGLE_CLIENT_ID]},
+        },
+    )
+    claims.validate(leeway=120)
+    return dict(claims)
 
 
 # Redirect user to Google for authentication
@@ -74,6 +97,8 @@ async def google_callback(request: Request, settings: Annotated[Settings, Depend
     try:
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get("userinfo")
+        if not user_info:
+            user_info = await decode_google_id_token(token)
         if not user_info:
             response = await oauth.google.get("https://openidconnect.googleapis.com/v1/userinfo", token=token)
             user_info = response.json()

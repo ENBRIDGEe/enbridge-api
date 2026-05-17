@@ -77,6 +77,29 @@ Main endpoints (summary and frontend usage)
 - POST `/auth/refresh` — Rotate the refresh token and issue a new access-token cookie.
 - POST `/logout` — Revoke the refresh token and clear auth cookies.
 
+Refresh token endpoint
+
+- **POST `/auth/refresh`** — Reissue the access token cookie using the current refresh token cookie.
+
+    - Purpose: Accepts the current refresh token from the HttpOnly `refresh_token` cookie, validates it, and issues a fresh access token cookie used for authenticated requests. The existing refresh token remains valid until logout or expiry, which makes the endpoint safe to call multiple times during dashboard startup.
+    - Authentication: The endpoint reads the `refresh_token` cookie; no `Authorization` header required for rotation flows.
+    - Success: Returns `200 OK`, keeps the existing `refresh_token` cookie in place, and sets a fresh `access_token` cookie. The response body may include a short JSON status payload.
+    - Failure: Returns `401 Unauthorized` when the refresh token is missing, invalid, or expired. On failure the server will clear auth cookies.
+
+Example curl (browser flows should rely on the cookie being sent automatically):
+
+```bash
+curl -X POST http://localhost:8000/auth/refresh \
+    -H "Content-Type: application/json" \
+    --cookie "refresh_token=<current_refresh_token>" \
+    -i
+```
+
+Notes:
+
+- The refresh-token lookup is recorded in the `users` table using `refresh_token_hash`, `refresh_token_expires_at`, and `refresh_token_revoked_at` (see the migration noted above). The refresh token itself is reused until logout or expiry so dashboard startup can safely call `/auth/refresh` more than once.
+- When testing with `httpx` or `curl`, ensure you forward cookies between calls to observe rotation behavior.
+
 - GET `/users/me/` — Get current user (requires auth)
 - PATCH `/users/me` — Update the current user's profile name (requires auth)
 - GET `/users/me/public` — Safe public fields for the current user (requires auth)
@@ -87,6 +110,7 @@ Frontend dashboard recommendation:
 - Use `GET /users/auth` when you want the authenticated user payload for the dashboard header/profile area.
 - Keep browser requests on the same host as the auth cookie, for example frontend on `http://localhost:5173` and API on `http://localhost:8000`.
 - Always include credentials in browser requests so the HttpOnly cookie is sent.
+- If `/app/dashboard` keeps spinning after login, that is usually a frontend auth-guard or data-loading issue rather than a backend login failure. The backend should already have completed the redirect and set the cookies.
 
 - Goals
     - GET `/goals` — List goals for current user (requires auth)
@@ -217,6 +241,33 @@ Tests:
 ```bash
 pytest -q
 ```
+
+Recent changes (important)
+
+- **Refresh-token migration**: The app now stores refresh-token rotation state on the `users` table using three columns: `refresh_token_hash`, `refresh_token_expires_at`, and `refresh_token_revoked_at`. An Alembic migration exists at `migrations/versions/eaa370972844_updated_refresh_token_into_user_s_table.py`. To apply this change on any environment run:
+
+```bash
+alembic upgrade head
+# Or run the SQL manually if you cannot run Alembic:
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_hash TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_expires_at TIMESTAMP;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_revoked_at TIMESTAMP;
+```
+
+- **Connection pooling / Supabase pooler**: When connecting to Supabase in production you should use the Supabase session pooler (host like `*.pooler.supabase.com`) and set `sslmode=require`. The app's `core/database.py` is configured to build the `DATABASE_URL` from the lowercase env vars found in `.env` (`user`, `password`, `host`, `port`, `dbname`) and uses SQLAlchemy's `NullPool` so client-side pooling is disabled (recommended when using a managed pooler).
+
+- **Tasks `completed_at`**: The `tasks` table and API now include a `completed_at` field (datetime). Creating or updating a task may set or clear `completed_at` based on the `completed` boolean in the API payload.
+
+- **Goals activity (heatmap)**: Per-day activity tracking for goals was added. New endpoints:
+    - `POST /goals/{goal_id}/activity` — record activity for a day
+    - `DELETE /goals/{goal_id}/activity` — remove activity for a day
+    - `GET /goals/{goal_id}/activity` — list activity days for a goal
+
+Testing notes / safety
+
+- The test suite (`pytest -q`) uses the application's configured DB by default. Ensure your `.env` points to a safe test or development database before running the full test suite — tests will create, modify, and delete data.
+
+If you want me to roll the Alembic migrations for you on a specific host or run the SQL directly against a DB, provide DB access (or run the provided SQL/commands on your environment).
 
 Database & migrations
 

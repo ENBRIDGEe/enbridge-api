@@ -19,6 +19,10 @@ from schemas.schemas import Token, UserRegister
 router = APIRouter()
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def get_frontend_redirect_url(settings: Settings) -> str:
     return settings.FRONTEND_URL or "http://localhost:5173/app/dashboard"
 
@@ -62,6 +66,7 @@ def get_password_hash(password):
 # Retrieves a user from the database by username
 # Returns a UsrInDB object if found, None otherwise
 def get_user(email: str):
+    email = normalize_email(email)
     db = SessionLocal()
     try:
         result = db.execute(
@@ -69,7 +74,7 @@ def get_user(email: str):
                 """
                 SELECT id, name, email, password_hash, is_active, is_admin, created_at, updated_at
                 FROM users
-                WHERE email = :email
+                WHERE LOWER(email) = :email
                 """
             ),
             {"email": email},
@@ -82,6 +87,7 @@ def get_user(email: str):
 
 # Creates a user row that matches the users schema
 def create_user(name: str, email: str, password_hash: str):
+    email = normalize_email(email)
     db = SessionLocal()
     try:
         existing_user = db.execute(
@@ -89,7 +95,7 @@ def create_user(name: str, email: str, password_hash: str):
                 """
                 SELECT id, name, email, password_hash, is_active, is_admin, created_at, updated_at
                 FROM users
-                WHERE email = :email
+                WHERE LOWER(email) = :email
                 """
             ),
             {"email": email},
@@ -117,6 +123,7 @@ def create_user(name: str, email: str, password_hash: str):
 # Authenticates a user by verifying username and password
 # Returns the user object if authentication successful, False otherwise
 def authenticate_user(email: str, password: str):
+    email = normalize_email(email)
     user = get_user(email)
     if not user:
         return False
@@ -340,6 +347,7 @@ async def register(
     user_data: UserRegister,
     settings: Annotated[Settings, Depends(get_settings)],
 ):
+    user_data.email = normalize_email(user_data.email)
     existing_user = get_user(user_data.email)
     if existing_user:
         raise HTTPException(
@@ -386,19 +394,15 @@ async def refresh_access_token(request: Request, settings: Annotated[Settings, D
     token_user = get_refresh_token_user(refresh_token)
     if not token_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-
-    revoke_refresh_token(refresh_token)
     access_token = create_access_token(
         settings,
         data={"sub": token_user["email"]},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
         auth_method="refresh",
     )
-    new_refresh_token = create_refresh_token()
-    store_refresh_token(token_user["id"], new_refresh_token, settings)
 
     response = JSONResponse({"message": "Access token refreshed"})
-    set_auth_cookies(response, request, settings, access_token, new_refresh_token)
+    set_auth_cookies(response, request, settings, access_token, refresh_token)
     return response
 
 
