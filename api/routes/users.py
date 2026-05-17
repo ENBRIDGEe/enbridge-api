@@ -12,7 +12,9 @@ router = APIRouter()
 def get_all_users():
     db = SessionLocal()
     try:
-        result = db.execute(text("SELECT * FROM users"))
+        result = db.execute(
+            text("SELECT id, name, email, is_active, is_admin, created_at, updated_at FROM users")
+        )
         return [dict(user) for user in result.mappings().all()]
     finally:
         db.close()

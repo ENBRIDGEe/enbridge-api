@@ -75,7 +75,16 @@ def get_password_hash(password):
 def get_user(email: str):
     db = SessionLocal()
     try:
-        result = db.execute(text("SELECT * FROM users WHERE email = :email"), {"email": email})
+        result = db.execute(
+            text(
+                """
+                SELECT id, name, email, password_hash, is_active, is_admin, created_at, updated_at
+                FROM users
+                WHERE email = :email
+                """
+            ),
+            {"email": email},
+        )
         user = result.mappings().first()
         return dict(user) if user else None
     finally:
@@ -87,7 +96,13 @@ def create_user(name: str, email: str, password_hash: str):
     db = SessionLocal()
     try:
         existing_user = db.execute(
-            text("SELECT * FROM users WHERE email = :email"),
+            text(
+                """
+                SELECT id, name, email, password_hash, is_active, is_admin, created_at, updated_at
+                FROM users
+                WHERE email = :email
+                """
+            ),
             {"email": email},
         ).mappings().first()
 
@@ -99,7 +114,7 @@ def create_user(name: str, email: str, password_hash: str):
                 """
                 INSERT INTO users (id, name, email, password_hash, is_active, is_admin, created_at, updated_at)
                 VALUES (:id, :name, :email, :password_hash, TRUE, FALSE, NOW(), NOW())
-                RETURNING *
+                RETURNING id, name, email, password_hash, is_active, is_admin, created_at, updated_at
                 """
             ),
             {"id": str(uuid4()), "name": name, "email": email, "password_hash": password_hash},
@@ -152,12 +167,15 @@ def store_refresh_token(user_id, refresh_token: str, settings: Settings):
         db.execute(
             text(
                 """
-                INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at)
-                VALUES (:id, :user_id, :token_hash, :expires_at, NULL, NOW())
+                UPDATE users
+                SET refresh_token_hash = :token_hash,
+                    refresh_token_expires_at = :expires_at,
+                    refresh_token_revoked_at = NULL,
+                    updated_at = NOW()
+                WHERE id = :user_id
                 """
             ),
             {
-                "id": str(uuid4()),
                 "user_id": str(user_id),
                 "token_hash": token_hash,
                 "expires_at": expires_at,
@@ -175,15 +193,12 @@ def get_refresh_token_user(refresh_token: str):
         row = db.execute(
             text(
                 """
-                SELECT
-                    refresh_tokens.id AS refresh_token_id,
-                    users.*
-                FROM refresh_tokens
-                JOIN users ON users.id = refresh_tokens.user_id
-                WHERE refresh_tokens.token_hash = :token_hash
-                  AND refresh_tokens.revoked_at IS NULL
-                  AND refresh_tokens.expires_at > NOW()
-                  AND users.is_active = TRUE
+                SELECT id, name, email, password_hash, is_active, is_admin, created_at, updated_at
+                FROM users
+                WHERE refresh_token_hash = :token_hash
+                  AND refresh_token_revoked_at IS NULL
+                  AND refresh_token_expires_at > NOW()
+                  AND is_active = TRUE
                 """
             ),
             {"token_hash": token_hash},
@@ -200,9 +215,11 @@ def revoke_refresh_token(refresh_token: str):
         db.execute(
             text(
                 """
-                UPDATE refresh_tokens
-                SET revoked_at = NOW()
-                WHERE token_hash = :token_hash AND revoked_at IS NULL
+                UPDATE users
+                SET refresh_token_revoked_at = NOW(),
+                    updated_at = NOW()
+                WHERE refresh_token_hash = :token_hash
+                  AND refresh_token_revoked_at IS NULL
                 """
             ),
             {"token_hash": token_hash},
@@ -384,15 +401,14 @@ async def refresh_access_token(request: Request, settings: Annotated[Settings, D
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
     revoke_refresh_token(refresh_token)
-    user = {key: value for key, value in token_user.items() if key != "refresh_token_id"}
     access_token = create_access_token(
         settings,
-        data={"sub": user["email"]},
+        data={"sub": token_user["email"]},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
         auth_method="refresh",
     )
     new_refresh_token = create_refresh_token()
-    store_refresh_token(user["id"], new_refresh_token, settings)
+    store_refresh_token(token_user["id"], new_refresh_token, settings)
 
     response = JSONResponse({"message": "Access token refreshed"})
     set_auth_cookies(response, request, settings, access_token, new_refresh_token)

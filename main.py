@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from core.database import engine
 from core.config import Settings
-from models.models import Base, Focus_sessions, Refresh_tokens
+from models.models import Base, Focus_sessions
 from api.routes import auth, analytics, goals, google_auth, milestones, notifications, tasks, users
 
 from starlette.middleware.sessions import SessionMiddleware
@@ -39,9 +40,13 @@ app.add_middleware(
 )
 
 try:
-    Base.metadata.create_all(bind=engine, tables=[Focus_sessions.__table__, Refresh_tokens.__table__])
+    Base.metadata.create_all(bind=engine, tables=[Focus_sessions.__table__])
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_hash VARCHAR"))
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_expires_at TIMESTAMP"))
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_revoked_at TIMESTAMP"))
 except Exception as exc:
-    print(f"Failed to ensure focus_sessions table exists: {exc}")
+    print(f"Failed to ensure auth/focus schema exists: {exc}")
 
 @app.exception_handler(OperationalError)
 async def database_unavailable_handler(request: Request, exc: OperationalError) -> JSONResponse:
