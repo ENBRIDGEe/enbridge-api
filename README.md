@@ -212,17 +212,33 @@ const user = await response.json();
 
 Database & migrations
 
-- The app will attempt to create tables at startup when the DB is available. For production use, prefer Alembic migrations instead of relying on `create_all()`.
-- Recommended workflow:
+- The app will attempt to create tables at startup when the DB is available.
+- For production use, prefer **Alembic migrations** instead of relying only on `create_all()`.
+
+## Local setup for Alembic (one-time)
+
+This repository currently does **not** include an Alembic environment. Create it once:
 
 ```bash
-# set DATABASE env (.env)
-cd backend
+cd /Users/kritimantalukdar/Desktop/Client/enbridge-api
+alembic init migrations
+```
+
+## Apply model changes (repeatable)
+
+After updating your SQLAlchemy models, run:
+
+```bash
+# set DB env (.env)
 source .venv/bin/activate
-# create migration
-alembic revision --autogenerate -m "init"
+
+# generate a migration from model changes
+alembic revision --autogenerate -m "update models"
+
+# apply migration to enbridge.db / Postgres
 alembic upgrade head
 ```
+
 
 Where to look for full schema
 

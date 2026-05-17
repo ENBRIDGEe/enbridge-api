@@ -42,9 +42,24 @@ app.add_middleware(
 try:
     Base.metadata.create_all(bind=engine, tables=[Focus_sessions.__table__])
     with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_hash VARCHAR"))
-        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_expires_at TIMESTAMP"))
-        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_revoked_at TIMESTAMP"))
+        # SQLite does not support IF NOT EXISTS for ADD COLUMN, so guard using PRAGMA table_info.
+        existing_cols = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()
+        }
+
+        if "refresh_token_hash" not in existing_cols:
+            connection.execute(text("ALTER TABLE users ADD COLUMN refresh_token_hash VARCHAR"))
+        if "refresh_token_expires_at" not in existing_cols:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN refresh_token_expires_at TIMESTAMP")
+            )
+        if "refresh_token_revoked_at" not in existing_cols:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN refresh_token_revoked_at TIMESTAMP")
+            )
+
+
 except Exception as exc:
     print(f"Failed to ensure auth/focus schema exists: {exc}")
 
