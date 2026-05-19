@@ -42,6 +42,20 @@ app.add_middleware(
     same_site=session_same_site,
 )
 
+@app.middleware("http")
+async def debug_token_middleware(request: Request, call_next):
+    if request.url.path == "/token" and request.method == "POST":
+        print("====== INCOMING /token REQUEST ======")
+        print("Headers:", dict(request.headers))
+        try:
+            body = await request.body()
+            print("Raw Body:", body)
+        except Exception as e:
+            print("Could not read body:", e)
+        print("=====================================")
+    response = await call_next(request)
+    return response
+
 @app.exception_handler(OperationalError)
 async def database_unavailable_handler(request: Request, exc: OperationalError) -> JSONResponse:
     return JSONResponse(

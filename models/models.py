@@ -1,7 +1,6 @@
 from sqlalchemy.orm import declarative_base
 from uuid import uuid4
-from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Float, func, Integer, Date, Text, Time
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Float, func, Integer, Date, Text, Time, Uuid as UUID
 
 Base = declarative_base()
 
