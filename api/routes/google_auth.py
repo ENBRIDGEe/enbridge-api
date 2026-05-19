@@ -2,11 +2,14 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, APIRouter, status
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import MismatchingStateError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from httpx import ConnectError, ConnectTimeout, ReadTimeout
 from authlib.jose import JsonWebKey, JsonWebToken
+from datetime import timedelta
 from .auth import (
-    create_user_session,
+    create_access_token,
+    create_refresh_token,
+    store_refresh_token,
     create_user,
     get_user,
     normalize_email,
@@ -81,9 +84,7 @@ async def auth_google(request: Request, settings: Annotated[Settings, Depends(ge
     redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("google_callback"))
 
     # If the client expects JSON (likely an XHR), return the auth URL instead of redirecting.
-    # NOTE: A top-level navigation is required for OAuth so the browser stores the session cookie.
     if "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with"):
-        # Build the redirect response and extract Location header
         resp = await oauth.google.authorize_redirect(request, redirect_uri=redirect_uri)
         location = resp.headers.get("location")
         return JSONResponse({"auth_url": location, "note": "Use window.location.href = auth_url to start OAuth (must be a top-level navigation)."})
@@ -105,9 +106,22 @@ async def google_callback(request: Request, settings: Annotated[Settings, Depend
 
         user = get_or_create_google_user(user_info)
 
-        return create_user_session(request, user, settings, auth_method="google")
+        # Create tokens
+        access_token = create_access_token(
+            settings,
+            data={"sub": user["email"]},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+            auth_method="google",
+        )
+        refresh_token = create_refresh_token()
+        store_refresh_token(user["id"], refresh_token, settings)
+
+        # Redirect to frontend with tokens in query params
+        frontend_url = settings.FRONTEND_URL or "http://localhost:5173/app/dashboard"
+        redirect_url = f"{frontend_url}?access_token={access_token}&refresh_token={refresh_token}&auth_method=google"
+        return RedirectResponse(url=redirect_url)
+
     except MismatchingStateError as mse:
-        # Provide a clearer error explaining common causes and remediation steps
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
