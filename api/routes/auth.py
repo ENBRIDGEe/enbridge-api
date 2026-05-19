@@ -37,7 +37,15 @@ def get_cookie_samesite(settings: Settings) -> str:
 
 
 def should_use_secure_cookie(request: Request, settings: Settings) -> bool:
-    return request.url.scheme == "https" or str(settings.COOKIE_SECURE).lower() == "true"
+    # Check if explicitly set to true
+    if str(settings.COOKIE_SECURE).lower() == "true":
+        return True
+    # Check X-Forwarded-Proto header (for API Gateway/reverse proxy)
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+    if forwarded_proto == "https":
+        return True
+    # Fall back to request scheme
+    return request.url.scheme == "https"
 
 
 def get_access_cookie_name(settings: Settings | None = None) -> str:
