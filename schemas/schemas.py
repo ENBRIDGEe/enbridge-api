@@ -69,6 +69,15 @@ class RefreshToken(BaseModel):
     revoked_at: datetime | None = None
     created_at: datetime | None = None
 
+
+class NotificationUpdate(BaseModel):
+    push_enabled: bool | None = None
+    email_enabled: bool | None = None
+    reminder_time: time | datetime | None = Field(default=None, alias="remainder")
+    timezone: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
 class Notification_settings(BaseModel):
     id: UUID | None = None
     user_id: UUID

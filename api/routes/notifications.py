@@ -1,20 +1,13 @@
-from datetime import datetime, time
+from datetime import datetime
 from typing import Annotated
 from uuid import uuid4
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 from sqlalchemy import text
 from core.database import SessionLocal
+from schemas.schemas import NotificationUpdate
 from .auth import get_current_active_user
 
 router = APIRouter()
-
-
-class NotificationUpdate(BaseModel):
-    push_enabled: bool | None = None
-    email_enabled: bool | None = None
-    reminder_time: time | datetime | None = Field(default=None, alias="remainder")
-    timezone: str | None = None
 
 
 def get_user_id(current_user_data: dict):
