@@ -65,7 +65,7 @@ For browser requests, send credentials so cookies are included:
 
 ```js
 fetch("http://localhost:8000/goals", {
-  credentials: "include",
+	credentials: "include",
 });
 ```
 
@@ -117,13 +117,13 @@ Goal create payload:
 
 ```json
 {
-  "title": "Finish onboarding",
-  "description": "Ship the onboarding flow",
-  "category": "product",
-  "target_date": "2026-05-31T00:00:00Z",
-  "deadline": "2026-05-31T00:00:00Z",
-  "status": "active",
-  "progress_percentage": 0
+	"title": "Finish onboarding",
+	"description": "Ship the onboarding flow",
+	"category": "product",
+	"target_date": "2026-05-31T00:00:00Z",
+	"deadline": "2026-05-31T00:00:00Z",
+	"status": "active",
+	"progress_percentage": 0
 }
 ```
 
@@ -143,10 +143,10 @@ Task create payload:
 
 ```json
 {
-  "title": "Write release notes",
-  "milestone_id": null,
-  "due_date": "2026-05-24T09:00:00Z",
-  "completed": false
+	"title": "Write release notes",
+	"milestone_id": null,
+	"due_date": "2026-05-24T09:00:00Z",
+	"completed": false
 }
 ```
 
@@ -159,10 +159,10 @@ The update payload supports the backward-compatible alias `remainder` for `remin
 
 ```json
 {
-  "push_enabled": true,
-  "email_enabled": true,
-  "reminder_time": "09:00:00",
-  "timezone": "UTC"
+	"push_enabled": true,
+	"email_enabled": true,
+	"reminder_time": "09:00:00",
+	"timezone": "UTC"
 }
 ```
 
@@ -175,9 +175,9 @@ Focus session payload:
 
 ```json
 {
-  "session_duration_minutes": 25,
-  "completed_at": "2026-05-16T22:45:00Z",
-  "date": "2026-05-16"
+	"session_duration_minutes": 25,
+	"completed_at": "2026-05-16T22:45:00Z",
+	"date": "2026-05-16"
 }
 ```
 
