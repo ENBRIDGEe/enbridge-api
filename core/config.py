@@ -27,19 +27,28 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: str = os.getenv("COOKIE_SAMESITE", "lax")
     COOKIE_DOMAIN: str | None = os.getenv("COOKIE_DOMAIN") or None
 
-    # Fetch variables (optional for local sqlite-dev)
-    # README specifies lowercase env var names for Postgres: user/password/host/port/dbname.
+    # Prefer explicit DATABASE_URL when provided.
+    DATABASE_URL: str | None = os.getenv("DATABASE_URL")
+
+    # Fetch variables (optional fallback when DATABASE_URL is not set)
+    # Lowercase env var names for Postgres: user/password/host/port/dbname.
     USER: str | None = os.getenv("user")
     PASSWORD: str | None = os.getenv("password")
     HOST: str | None = os.getenv("host")
     PORT: str | None = os.getenv("port")
     DBNAME: str | None = os.getenv("dbname")
 
-    # Construct the SQLAlchemy connection string
-    # If Postgres env vars are not provided, fall back to sqlite.
-    if USER and PASSWORD and HOST and PORT and DBNAME:
-        DATABASE_URL: str = (
-            f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
-        )
-    else:
-        DATABASE_URL: str = "sqlite:///./enbridge.db"
+    # Construct the SQLAlchemy connection string.
+    # Priority: explicit DATABASE_URL -> Postgres parts -> sqlite fallback.
+    if not DATABASE_URL:
+        if USER and PASSWORD and HOST and PORT and DBNAME:
+            DATABASE_URL = (
+                f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+            )
+        else:
+            DATABASE_URL = "sqlite:///./enbridge.db"
+
+    # Lambda filesystems are read-only except /tmp.
+    # If a relative sqlite path is used in Lambda, switch to /tmp automatically.
+    if os.getenv("AWS_LAMBDA_FUNCTION_NAME") and DATABASE_URL == "sqlite:///./enbridge.db":
+        DATABASE_URL = "sqlite:////tmp/enbridge.db"

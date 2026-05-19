@@ -14,6 +14,13 @@ from starlette.middleware.sessions import SessionMiddleware
 app = FastAPI()
 settings = Settings()
 
+
+@app.on_event("startup")
+def ensure_sqlite_schema() -> None:
+    # In sqlite deployments (including serverless /tmp), create schema if it does not exist.
+    if settings.DATABASE_URL.startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
+
 cors_allow_origins = [
     origin.strip()
     for origin in settings.CORS_ALLOW_ORIGINS.split(",")
@@ -60,7 +67,7 @@ async def debug_token_middleware(request: Request, call_next):
 async def database_unavailable_handler(request: Request, exc: OperationalError) -> JSONResponse:
     return JSONResponse(
         status_code=503,
-        content={"detail": "Database unavailable. Check DATABASE_URL and ensure PostgreSQL is running."},
+        content={"detail": "Database unavailable. Check DATABASE_URL and ensure the configured database is reachable and migrated."},
     )
 
 
